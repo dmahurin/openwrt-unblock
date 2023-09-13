@@ -1,0 +1,90 @@
+#!/bin/sh
+
+unblock() {
+ uci del_list dhcp.@dnsmasq[0].server='/youtube.com/'
+ /etc/init.d/dnsmasq restart
+}
+
+unblock_time=45
+min_time=30
+
+command="sleep $(( $unblock_time * 60 )) && uci revert dhcp.@dnsmasq[0].server; /etc/init.d/dnsmasq restart"
+
+delayed_block() {
+ sh -c "$command" > /dev/null 2>&1 < /dev/null &
+}
+
+timed_unblock() {
+ REMOTE_MAC="$(ip n | grep "\b$REMOTE_HOST\b" | awk '{print $5}')"
+ if ! grep -q "^$REMOTE_MAC$" /etc/config/unblock_allow.txt; then
+    echo "No permission $mac != $REMOTE_MAC ($REMOTE_HOST)"
+    return
+ fi
+ pid=$(pgrep -f "uci revert dhcp")
+ 
+ if [ -n "$pid" ]; then
+  start_time=$(cat /proc/$pid/stat | cut -d' ' -f 22)
+  
+  current_time=$(cat /proc/$$/stat | cut -d' ' -f 22)
+  
+  elapsed_time=$(( $current_time - $start_time))
+  
+  if [ "$elapsed_time" -gt $(( $min_time * 60 * 100 )) ]; then
+   echo "resetting<br/>"
+   kill "$pid"
+   pid=
+  else
+   echo already unblocked for at least $min_time minutes
+  fi
+ fi
+ 
+ if [ -z "$pid" ]; then
+  echo "unblocking<br/>"
+  unblock
+  delayed_block
+  echo "unblocked for $unblock_time minutes"
+ fi
+}
+
+cancel_unblock() {
+ pid=$(pgrep -f "uci revert dhcp")
+ 
+ if [ -n "$pid" ]; then
+  kill "$pid"
+ fi
+
+ uci revert dhcp.@dnsmasq[0].server
+}
+
+echo "Content-type: text/html"
+echo ""
+
+echo "<html><body>"
+echo "<h2>Unblock</h2>"
+
+echo "<form method=\"POST\">"
+echo "<input name=\"submit\" type=\"submit\" value=\"Unblock\">"
+echo "<input name=\"submit\" type=\"submit\" value=\"Block\">"
+echo "</form>"
+
+if [ "$REQUEST_METHOD" = "POST" ]; then
+ echo "<p>"
+ read -r post
+ post="$(echo "$post" | sed 's:.*=::g')"
+
+ echo "<html><body>"
+ if [ "$post" = "Unblock" ]; then
+  timed_unblock
+ elif [ "$post" = "Block" ]; then
+  cancel_unblock
+  echo blocked
+ else
+  echo unknown
+ fi
+elif [ -z "$REQUEST_URI" ]; then
+ timed_unblock
+ cancel_unblock
+fi
+
+echo "</body></html>"
+
