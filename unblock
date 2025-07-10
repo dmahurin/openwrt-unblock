@@ -1,8 +1,20 @@
 #!/bin/sh
 
 unblock() {
- uci del_list dhcp.@dnsmasq[0].server='/youtube.com/'
+ if [ -e /etc/config/unblocklist ]; then
+  cat /etc/config/unblocklist | while read line ; do uci del_list dhcp.@dnsmasq[0].server="/$line/" ; done
+ else
+  uci del_list dhcp.@dnsmasq[0].server='/youtube.com/'
+ fi
  /etc/init.d/dnsmasq restart
+}
+
+check_block() {
+ if [ -z "$(uci get dhcp.@dnsmasq[0].server)" ] && [ -e /etc/config/unblocklist -o /etc/config/blocklist ]; then
+  cat /etc/config/unblocklist /etc/config/blocklist | sort -u | do while read line ; uci add_list dhcp.@dnsmasq[0].server="/$line/" ; done
+  uci commit
+  /etc/init.d/dnsmasq restart
+ fi
 }
 
 unblock_time=45
@@ -77,6 +89,7 @@ if [ "$REQUEST_METHOD" = "POST" ]; then
   timed_unblock
  elif [ "$post" = "Block" ]; then
   cancel_unblock
+  check_block
   echo blocked
  else
   echo unknown
