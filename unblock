@@ -10,10 +10,12 @@ unblock() {
 }
 
 check_block() {
- if [ -z "$(uci get dhcp.@dnsmasq[0].server)" ] && [ -e /etc/config/unblocklist -o /etc/config/blocklist ]; then
-  cat /etc/config/unblocklist /etc/config/blocklist | sort -u | do while read line ; uci add_list dhcp.@dnsmasq[0].server="/$line/" ; done
-  uci commit
-  /etc/init.d/dnsmasq restart
+ if [ -e /etc/config/unblocklist -o /etc/config/blocklist ]; then
+  ( cat /etc/config/unblocklist /etc/config/blocklist | sort -u ; uci show dhcp.@dnsmasq[0].server | sed 's:^[^=]*=::g' | tr ' ' '\n' | tr -d "'" | sed 's:^/::g' | sed 's:/$::g' ) | sort | uniq -c | grep ' 1 ' | sed 's:^ *1 ::g' | while read line ; do uci add_list dhcp.@dnsmasq[0].server="/$line/" ; done
+  if [ -n "$(uci changes dhcp)" ]; then
+   uci commit dhcp
+   /etc/init.d/dnsmasq restart
+  fi
  fi
 }
 
